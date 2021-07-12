@@ -31,9 +31,9 @@ async fn main() -> anyhow::Result<()> {
         client.request(req);
     }
     for _ in 0..connection_num {
-        let (_handle, _req) = futures::future::poll_fn(|cx| {
+        let (_handle, _response) = futures::future::poll_fn(|cx| {
             cx.waker().wake_by_ref();
-            client.poll_body(cx)
+            client.poll_response(cx)
         })
         .await
         .unwrap()?;

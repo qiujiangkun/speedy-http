@@ -3,8 +3,7 @@ use http::{Request, Response};
 use hyper::body::{Buf, DecodedLength};
 use hyper::proto::h1::ClientTransaction;
 use hyper::proto::{Conn, RequestHead, RequestLine};
-use std::io::{Error, ErrorKind};
-use std::pin::Pin;
+use std::io::ErrorKind;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 macro_rules! ensure {
@@ -63,7 +62,7 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
         self.queue.push_back(Receiving::new(handle));
         handle
     }
-    pub fn poll_body(
+    pub fn poll_response(
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<Option<std::io::Result<(RequestHandle, Response<Bytes>)>>> {
@@ -123,25 +122,25 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
     }
 }
 
-impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> AsyncWrite
-    for HttpClient<Channel, Buf>
-{
-    fn poll_write(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &[u8],
-    ) -> Poll<Result<usize, Error>> {
-        panic!("Does not support writing directly");
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        self.conn.poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        self.conn.poll_shutdown(cx)
-    }
-}
+// impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> AsyncWrite
+//     for HttpClient<Channel, Buf>
+// {
+//     fn poll_write(
+//         self: Pin<&mut Self>,
+//         _cx: &mut Context<'_>,
+//         _buf: &[u8],
+//     ) -> Poll<Result<usize, Error>> {
+//         panic!("Does not support writing directly");
+//     }
+//
+//     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+//         self.conn.poll_flush(cx)
+//     }
+//
+//     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+//         self.conn.poll_shutdown(cx)
+//     }
+// }
 
 // impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> AsyncRead for HttpClient<Channel, Buf> {
 //     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
