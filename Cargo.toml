@@ -6,4 +6,15 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hyper = { path = "hyper", features = ["full"] }
+hyper = { path = "./hyper", features = ["full"] }
+tokio = "1"
+http = "0.2"
+futures = "*"
+bytes = "*"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tracing = "*"
+tracing-log = { version = "*" }
+tracing-subscriber = { version = "*" }
+anyhow = "*"
