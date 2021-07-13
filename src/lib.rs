@@ -1,5 +1,6 @@
 use bytes::{Bytes, BytesMut};
-use http::{Request, Response};
+use http::header::HOST;
+use http::{HeaderValue, Request, Response};
 use hyper::body::{Buf, DecodedLength};
 use hyper::proto::h1::ClientTransaction;
 use hyper::proto::{Conn, RequestHead, RequestLine};
@@ -49,7 +50,16 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
         self.handle_cnt += 1;
         handle
     }
-    pub fn request(&mut self, req: Request<Buf>) -> RequestHandle {
+    pub fn request(&mut self, mut req: Request<Buf>) -> RequestHandle {
+        let aur = req
+            .uri()
+            .authority()
+            .expect("No valid authority")
+            .to_string();
+        req.headers_mut().insert(
+            HOST,
+            HeaderValue::from_str(&aur).expect("Host name invalid"),
+        );
         let (parts, body) = req.into_parts();
         let head = RequestHead {
             version: parts.version,

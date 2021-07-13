@@ -1,4 +1,5 @@
 use anyhow::Context;
+use http::header::HOST;
 use http::Request;
 use hyper::body::Bytes;
 use hyper::Uri;
