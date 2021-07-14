@@ -1,5 +1,5 @@
 use crate::{HttpClient, RequestHandle};
-use futures::future::LocalBoxFuture;
+use futures::future::BoxFuture;
 use futures::{Future, FutureExt};
 use http::Response;
 use std::task::{Context, Poll};
@@ -13,18 +13,19 @@ pub struct HttpClientPoolConfig {
 pub struct HttpClientPool<Channel, Buf = bytes::Bytes> {
     clients: Vec<HttpClient<Channel, Buf>>,
     last_client: usize,
-    connecting: Vec<LocalBoxFuture<'static, std::io::Result<Channel>>>,
-    builder: Box<dyn Fn() -> LocalBoxFuture<'static, std::io::Result<Channel>> + Send>,
+    connecting: Vec<BoxFuture<'static, std::io::Result<Channel>>>,
+    builder: Box<dyn Fn() -> BoxFuture<'static, std::io::Result<Channel>> + Send>,
     pending_requests: std::collections::VecDeque<(RequestHandle, http::Request<Buf>)>,
     config: HttpClientPoolConfig,
 }
+
 impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
     HttpClientPool<Channel, Buf>
 {
     pub fn new<Func, Fut>(builder: Func, config: HttpClientPoolConfig) -> Self
     where
         Func: Fn() -> Fut + Send + 'static,
-        Fut: Future<Output = std::io::Result<Channel>> + 'static,
+        Fut: Future<Output = std::io::Result<Channel>> + Send + 'static,
     {
         Self {
             clients: vec![],
