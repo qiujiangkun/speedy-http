@@ -47,7 +47,7 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
             let id = self.last_client;
             self.last_client += 1;
             let c = &self.clients[id];
-            if c.queue_len() < self.config.max_conv_per_channel {
+            if c.conn.can_write_head() && c.queue_len() < self.config.max_conv_per_channel {
                 client = Some(id);
                 break;
             }
@@ -90,7 +90,10 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
     pub fn request(&mut self, request: http::Request<Buf>) -> RequestHandle {
         let handle = RequestHandle::unique();
         if let Some(client) = self.get_client_mut() {
-            client.request(request);
+            if let Err(req) = client.request(request) {
+                warn!("Client to be removed, request pending");
+                self.pending_requests.push_back((handle, req));
+            }
         } else {
             warn!("No available clients, request pending");
             self.pending_requests.push_back((handle, request));
@@ -109,7 +112,10 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
         for _ in 0..10 {
             if let Some((handle, request)) = self.pending_requests.pop_front() {
                 if let Some(client) = self.get_client_mut() {
-                    client.request(request);
+                    if let Err(req) = client.request(request) {
+                        warn!("Client to be removed, request pending");
+                        self.pending_requests.push_back((handle, req));
+                    }
                 } else {
                     self.pending_requests.push_front((handle, request));
                     break;
@@ -120,6 +126,11 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
         let mut i = 0;
         while i < self.clients.len() {
             let client = &mut self.clients[i];
+            if !client.conn.can_write_head() {
+                warn!("Remove closed client");
+                self.clients.swap_remove(i);
+                continue;
+            }
             match client.poll_response(cx) {
                 Poll::Ready(Some(Ok(r))) => {
                     resp = Poll::Ready(r);

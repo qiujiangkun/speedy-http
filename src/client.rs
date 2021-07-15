@@ -26,7 +26,7 @@ impl Receiving {
     }
 }
 pub struct HttpClient<Channel, Buf = Bytes> {
-    conn: Conn<Channel, Buf, ClientTransaction>,
+    pub(crate) conn: Conn<Channel, Buf, ClientTransaction>,
     queue: std::collections::VecDeque<Receiving>,
 }
 
@@ -38,36 +38,37 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
         }
     }
 
-    pub fn request(&mut self, mut req: Request<Buf>) -> RequestHandle {
-        let aur = req
-            .uri()
-            .authority()
-            .expect("No valid authority")
-            .to_string();
-        req.headers_mut().insert(
-            HOST,
-            HeaderValue::from_str(&aur).expect("Host name invalid"),
-        );
-        let (parts, body) = req.into_parts();
-        let head = RequestHead {
-            version: parts.version,
-            subject: RequestLine(parts.method, parts.uri),
-            headers: parts.headers,
-            extensions: parts.extensions,
-        };
-        self.conn.write_full_msg(head, body);
-        let handle = RequestHandle::unique();
-        self.queue.push_back(Receiving::new(handle));
-        handle
+    pub fn request(&mut self, mut req: Request<Buf>) -> Result<RequestHandle, Request<Buf>> {
+        if self.conn.can_write_head() {
+            let aur = req
+                .uri()
+                .authority()
+                .expect("No valid authority")
+                .to_string();
+            req.headers_mut().insert(
+                HOST,
+                HeaderValue::from_str(&aur).expect("Host name invalid"),
+            );
+            let (parts, body) = req.into_parts();
+            let head = RequestHead {
+                version: parts.version,
+                subject: RequestLine(parts.method, parts.uri),
+                headers: parts.headers,
+                extensions: parts.extensions,
+            };
+            self.conn.write_full_msg(head, body);
+            let handle = RequestHandle::unique();
+            self.queue.push_back(Receiving::new(handle));
+            Ok(handle)
+        } else {
+            Err(req)
+        }
     }
     pub fn poll_response(
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<Option<std::io::Result<(RequestHandle, Response<Bytes>)>>> {
         let _ = self.conn.poll_flush(cx)?;
-        if self.queue.is_empty() {
-            return Poll::Ready(None);
-        }
         if self.conn.can_read_head() {
             match futures::ready!(self.conn.poll_read_head(cx)) {
                 Some(Ok((head, length, _))) => {
@@ -77,16 +78,14 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
                     *response.resp.headers_mut() = head.headers;
                     *response.resp.extensions_mut() = head.extensions;
                     response.length = Some(length);
-                    Poll::Pending
                 }
                 Some(Err(err)) => {
-                    Poll::Ready(Some(Err(std::io::Error::new(ErrorKind::Other, err))))
+                    return Poll::Ready(Some(Err(std::io::Error::new(ErrorKind::Other, err))))
                 }
-                None => {
-                    panic!("I don't know what to do")
-                }
+                None => return Poll::Ready(None),
             }
-        } else if self.conn.can_read_body() {
+        }
+        if self.conn.can_read_body() {
             match futures::ready!(self.conn.poll_read_body(cx)) {
                 Some(Ok(chunk)) => {
                     let response = ensure!(self.queue.front_mut(), "No available request in queue");
@@ -94,29 +93,28 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
                     length.sub_if(chunk.len() as _);
                     response.resp.body_mut().extend_from_slice(chunk.as_ref());
                     if length.into_opt() == Some(0) {
-                        Poll::Ready(Some(Ok(ensure!(
+                        return Poll::Ready(Some(Ok(ensure!(
                             self.queue
                                 .pop_front()
                                 .map(|x| (x.handle, x.resp.map(|body| body.freeze()))),
                             "No available request in queue"
-                        ))))
-                    } else {
-                        Poll::Pending
+                        ))));
                     }
                 }
-                None => Poll::Ready(Some(Ok(ensure!(
-                    self.queue
-                        .pop_front()
-                        .map(|x| (x.handle, x.resp.map(|body| body.freeze()))),
-                    "No available request in queue"
-                )))),
+                None => {
+                    return Poll::Ready(Some(Ok(ensure!(
+                        self.queue
+                            .pop_front()
+                            .map(|x| (x.handle, x.resp.map(|body| body.freeze()))),
+                        "No available request in queue"
+                    ))))
+                }
                 Some(Err(err)) => {
-                    Poll::Ready(Some(Err(std::io::Error::new(ErrorKind::Other, err))))
+                    return Poll::Ready(Some(Err(std::io::Error::new(ErrorKind::Other, err))))
                 }
             }
-        } else {
-            Poll::Pending
         }
+        Poll::Pending
     }
     pub fn queue_len(&self) -> usize {
         self.queue.len()

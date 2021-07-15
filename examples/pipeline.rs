@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
     let connection_num = 100;
     for _ in 0..connection_num {
         let req = Request::get(Uri::from_static("http://www.baidu.com")).body(Bytes::new())?;
-        client.request(req);
+        client.request(req).unwrap();
     }
     for _ in 0..connection_num {
         let (_handle, _response) = futures::future::poll_fn(|cx| {
