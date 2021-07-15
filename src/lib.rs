@@ -14,7 +14,7 @@ macro_rules! ensure {
 }
 static HANDLE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct RequestHandle(usize);
 impl RequestHandle {
     pub fn unique() -> Self {

@@ -131,7 +131,15 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
                 self.clients.swap_remove(i);
                 continue;
             }
-            match client.poll_response(cx) {
+            let result = client.poll_response(cx);
+            match &result {
+                Poll::Pending => {}
+                Poll::Ready(result) => {
+                    info!("Poll response result {:?}", result);
+                }
+            }
+
+            match result {
                 Poll::Ready(Some(Ok(r))) => {
                     resp = Poll::Ready(r);
                     break;
