@@ -132,12 +132,12 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
                 continue;
             }
             let result = client.poll_response(cx);
-            match &result {
-                Poll::Pending => {}
-                Poll::Ready(result) => {
-                    info!("Poll response result {:?}", result);
-                }
-            }
+            // match &result {
+            //     Poll::Pending => {}
+            //     Poll::Ready(result) => {
+            //         info!("Poll response result {:?}", result);
+            //     }
+            // }
 
             match result {
                 Poll::Ready(Some(Ok(r))) => {
