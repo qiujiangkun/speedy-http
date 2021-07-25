@@ -15,9 +15,18 @@ macro_rules! ensure {
 static HANDLE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 #[derive(Copy, Clone, Debug)]
-pub struct RequestHandle(usize);
-impl RequestHandle {
-    pub fn unique() -> Self {
-        RequestHandle(HANDLE_COUNT.fetch_add(1, Ordering::Relaxed))
+pub struct RequestHandle<T = ()> {
+    id: usize,
+    data: T,
+}
+impl<T> RequestHandle<T> {
+    pub fn unique(data: T) -> Self {
+        RequestHandle {
+            id: HANDLE_COUNT.fetch_add(1, Ordering::Relaxed),
+            data,
+        }
+    }
+    pub fn into_data(self) -> T {
+        self.data
     }
 }

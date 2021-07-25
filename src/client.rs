@@ -10,14 +10,14 @@ use std::io::ErrorKind;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-struct Receiving {
-    handle: RequestHandle,
+struct Receiving<T = ()> {
+    handle: RequestHandle<T>,
     resp: Response<BytesMut>,
     length: Option<DecodedLength>,
 }
 
-impl Receiving {
-    pub fn new(handle: RequestHandle) -> Self {
+impl<T> Receiving<T> {
+    pub fn new(handle: RequestHandle<T>) -> Self {
         Self {
             handle,
             resp: Default::default(),
@@ -25,12 +25,14 @@ impl Receiving {
         }
     }
 }
-pub struct HttpClient<Channel, Buf = Bytes> {
+pub struct HttpClient<Channel, Buf = Bytes, T = ()> {
     pub(crate) conn: Conn<Channel, Buf, ClientTransaction>,
-    queue: std::collections::VecDeque<Receiving>,
+    queue: std::collections::VecDeque<Receiving<T>>,
 }
 
-impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel, Buf> {
+impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf, T: Clone>
+    HttpClient<Channel, Buf, T>
+{
     pub fn new(io: Channel) -> Self {
         Self {
             conn: hyper::proto::Conn::new(io),
@@ -38,7 +40,11 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
         }
     }
 
-    pub fn request(&mut self, mut req: Request<Buf>) -> Result<RequestHandle, Request<Buf>> {
+    pub fn request(
+        &mut self,
+        mut req: Request<Buf>,
+        data: T,
+    ) -> Result<RequestHandle<T>, Request<Buf>> {
         if self.conn.can_write_head() {
             let aur = req
                 .uri()
@@ -57,8 +63,8 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
                 extensions: parts.extensions,
             };
             self.conn.write_full_msg(head, body);
-            let handle = RequestHandle::unique();
-            self.queue.push_back(Receiving::new(handle));
+            let handle = RequestHandle::unique(data);
+            self.queue.push_back(Receiving::new(handle.clone()));
             Ok(handle)
         } else {
             Err(req)
@@ -67,7 +73,7 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf> HttpClient<Channel
     pub fn poll_response(
         &mut self,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<std::io::Result<(RequestHandle, Response<Bytes>)>>> {
+    ) -> Poll<Option<std::io::Result<(RequestHandle<T>, Response<Bytes>)>>> {
         let _ = self.conn.poll_flush(cx)?;
         if self.conn.can_read_head() {
             match futures::ready!(self.conn.poll_read_head(cx)) {

@@ -10,17 +10,17 @@ pub struct HttpClientPoolConfig {
     pub maintain_size: Option<usize>,
     pub max_conv_per_channel: usize,
 }
-pub struct HttpClientPool<Channel, Buf = bytes::Bytes> {
-    clients: Vec<HttpClient<Channel, Buf>>,
+pub struct HttpClientPool<Channel, Buf = bytes::Bytes, T = ()> {
+    clients: Vec<HttpClient<Channel, Buf, T>>,
     last_client: usize,
     connecting: Vec<BoxFuture<'static, std::io::Result<Channel>>>,
     builder: Box<dyn Fn() -> BoxFuture<'static, std::io::Result<Channel>> + Send>,
-    pending_requests: std::collections::VecDeque<(RequestHandle, http::Request<Buf>)>,
+    pending_requests: std::collections::VecDeque<(RequestHandle<T>, http::Request<Buf>)>,
     config: HttpClientPoolConfig,
 }
 
-impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
-    HttpClientPool<Channel, Buf>
+impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, T: Clone>
+    HttpClientPool<Channel, Buf, T>
 {
     pub fn new<Func, Fut>(builder: Func, config: HttpClientPoolConfig) -> Self
     where
@@ -36,7 +36,7 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
             config,
         }
     }
-    fn get_client_mut(&mut self) -> Option<&mut HttpClient<Channel, Buf>> {
+    fn get_client_mut(&mut self) -> Option<&mut HttpClient<Channel, Buf, T>> {
         if self.last_client >= self.clients.len() {
             self.last_client = 0;
         }
@@ -87,16 +87,16 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
             self.connecting.push((self.builder)());
         }
     }
-    pub fn request(&mut self, request: http::Request<Buf>) -> RequestHandle {
-        let handle = RequestHandle::unique();
+    pub fn request(&mut self, request: http::Request<Buf>, data: T) -> RequestHandle<T> {
+        let handle = RequestHandle::unique(data.clone());
         if let Some(client) = self.get_client_mut() {
-            if let Err(req) = client.request(request) {
+            if let Err(req) = client.request(request, data) {
                 warn!("Client to be removed, request pending");
-                self.pending_requests.push_back((handle, req));
+                self.pending_requests.push_back((handle.clone(), req));
             }
         } else {
             warn!("No available clients, request pending");
-            self.pending_requests.push_back((handle, request));
+            self.pending_requests.push_back((handle.clone(), request));
             if self.clients.len() + self.connecting.len()
                 < self.config.maintain_size.unwrap_or(usize::MAX)
             {
@@ -108,11 +108,11 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf>
     pub fn poll_response(
         &mut self,
         cx: &mut Context,
-    ) -> Poll<(RequestHandle, Response<bytes::Bytes>)> {
+    ) -> Poll<(RequestHandle<T>, Response<bytes::Bytes>)> {
         for _ in 0..10 {
             if let Some((handle, request)) = self.pending_requests.pop_front() {
                 if let Some(client) = self.get_client_mut() {
-                    if let Err(req) = client.request(request) {
+                    if let Err(req) = client.request(request, handle.data.clone()) {
                         warn!("Client to be removed, request pending");
                         self.pending_requests.push_back((handle, req));
                     }
