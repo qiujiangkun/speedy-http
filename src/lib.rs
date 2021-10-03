@@ -1,5 +1,6 @@
 mod client;
 mod pool;
+pub mod stat;
 
 pub use client::*;
 pub use pool::*;

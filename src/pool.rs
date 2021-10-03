@@ -1,3 +1,4 @@
+use crate::stat::{ConnectionStatistics, ConnectionStatisticsEntry};
 use crate::{HttpClient, RequestHandle};
 use futures::future::BoxFuture;
 use futures::{Future, FutureExt};
@@ -10,6 +11,7 @@ pub struct HttpClientPoolConfig {
     pub maintain_size: Option<usize>,
     pub max_conv_per_channel: usize,
 }
+
 pub struct HttpClientPool<Channel, Buf = bytes::Bytes, T = ()> {
     clients: Vec<HttpClient<Channel, Buf, T>>,
     last_client: usize,
@@ -17,6 +19,8 @@ pub struct HttpClientPool<Channel, Buf = bytes::Bytes, T = ()> {
     builder: Box<dyn Fn() -> BoxFuture<'static, std::io::Result<Channel>> + Send>,
     pending_requests: std::collections::VecDeque<(RequestHandle<T>, http::Request<Buf>)>,
     config: HttpClientPoolConfig,
+    stat: ConnectionStatistics,
+    stats: Vec<ConnectionStatisticsEntry>,
 }
 
 impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, T: Clone>
@@ -34,8 +38,24 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
             builder: Box::new(move || Box::pin(builder())),
             pending_requests: Default::default(),
             config,
+            stat: Default::default(),
+            stats: vec![],
         }
     }
+
+    fn record_status(&mut self) {
+        self.stat.connection_connecting_count = self.connecting.len() as i64;
+        self.stat.connection_living_count = self.clients.len() as i64;
+        self.stat.request_pending_count = self.pending_requests.len() as i64;
+        match self.stats.last() {
+            Some(x) if x.stat == self.stat => {}
+            _ => self.stats.push(ConnectionStatisticsEntry {
+                time: std::time::SystemTime::now(),
+                stat: self.stat.clone(),
+            }),
+        }
+    }
+
     fn get_client_mut(&mut self) -> Option<&mut HttpClient<Channel, Buf, T>> {
         if self.last_client >= self.clients.len() {
             self.last_client = 0;
@@ -82,9 +102,13 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
             }
         }
     }
+    fn make_connection(&mut self) {
+        self.stat.connection_new_count += 1;
+        self.connecting.push((self.builder)());
+    }
     fn poll_maintain(&mut self) {
         while self.clients.len() + self.connecting.len() < self.config.maintain_size.unwrap_or(0) {
-            self.connecting.push((self.builder)());
+            self.make_connection()
         }
     }
     pub fn request(&mut self, request: http::Request<Buf>, data: T) -> RequestHandle<T> {
@@ -100,9 +124,11 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
             if self.clients.len() + self.connecting.len()
                 < self.config.maintain_size.unwrap_or(usize::MAX)
             {
-                self.connecting.push((self.builder)());
+                self.make_connection()
             }
         }
+        self.stat.connection_new_count += 1;
+        self.record_status();
         handle
     }
     pub fn poll_response(
@@ -142,11 +168,13 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
             match result {
                 Poll::Ready(Some(Ok(r))) => {
                     resp = Poll::Ready(r);
+                    self.stat.response_ok_count += 1;
                     break;
                 }
                 Poll::Ready(Some(Err(err))) => {
                     warn!("Encountered error: {:?}", err);
                     self.clients.swap_remove(i);
+                    self.stat.response_bad_count += 1;
                 }
                 Poll::Ready(None) => {
                     self.clients.swap_remove(i);
@@ -158,6 +186,10 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
         }
         self.poll_connecting(cx);
         self.poll_maintain();
+        self.record_status();
         resp
+    }
+    pub fn get_status_records(&self) -> &Vec<ConnectionStatisticsEntry> {
+        &self.stats
     }
 }
