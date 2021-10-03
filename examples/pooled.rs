@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
             max_conv_per_channel: 10,
         },
     );
-    let connection_num = 100;
+    let connection_num = 1000;
     for _ in 0..connection_num {
         let req = Request::get(Uri::from_static("http://www.baidu.com")).body(Bytes::new())?;
         client.request(req, std::time::Instant::now());

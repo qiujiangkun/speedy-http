@@ -127,7 +127,7 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
                 self.make_connection()
             }
         }
-        self.stat.connection_new_count += 1;
+        self.stat.request_sent_count += 1;
         self.record_status();
         handle
     }
