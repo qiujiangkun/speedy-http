@@ -18,3 +18,7 @@ tokio = { version = "1", features = ["full"] }
 tracing-log = { version = "*" }
 tracing-subscriber = { version = "*" }
 anyhow = "*"
+tokio-rustls = { version = "0.22" }
+webpki-roots = "0.21"
+webpki = "0.21"
+rustls = "0.19"

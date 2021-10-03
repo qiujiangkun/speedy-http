@@ -12,7 +12,6 @@ mod logging;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::setup_logs(LevelFilter::DEBUG)?;
-
     let begin = std::time::Instant::now();
     let builder = || tokio::net::TcpStream::connect("www.baidu.com:80");
     let mut client = HttpClientPool::new(
