@@ -35,11 +35,14 @@ async fn main() -> anyhow::Result<()> {
         .await;
         sum_time += handle.into_data().elapsed().as_micros();
     }
+    let elapsed = begin.elapsed();
+
     info!(
-        "Finished {} connections in {:?}. Average RTT {} ms",
+        "Finished {} requests in {:?}({} ms/req). Average RTT(req) {} ms.",
         connection_num,
-        begin.elapsed(),
-        sum_time as f64 / connection_num as f64 / 1000.0
+        elapsed,
+        elapsed.as_micros() as f64 / connection_num as f64 / 1000.0,
+        sum_time as f64 / connection_num as f64 / 1000.0,
     );
     info!("Writing {} records", client.get_status_records().len());
     let mut csv = std::fs::OpenOptions::new()
@@ -48,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
         .truncate(true)
         .open("result.csv")?;
     ConnectionStatisticsEntry::write_csv_headers(&mut csv)?;
-    for status in client.get_status_records() {
+    for status in &client.get_status_records().history_stats {
         status.write_csv_line(&mut csv)?;
     }
     csv.flush()?;

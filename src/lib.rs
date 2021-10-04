@@ -17,6 +17,7 @@ static HANDLE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicU
 
 #[derive(Copy, Clone, Debug)]
 pub struct RequestHandle<T = ()> {
+    #[allow(dead_code)]
     id: usize,
     data: T,
 }

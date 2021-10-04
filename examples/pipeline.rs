@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
         // println!("Read {} bytes", body.len());
     }
     println!(
-        "Finished {} connections in {:?}",
+        "Finished {} requests in {:?}",
         connection_num,
         begin.elapsed()
     );

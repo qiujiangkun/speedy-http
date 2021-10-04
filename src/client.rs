@@ -7,6 +7,7 @@ use hyper::body::{Buf, DecodedLength};
 use hyper::proto::h1::ClientTransaction;
 use hyper::proto::{Conn, RequestHead, RequestLine};
 use std::io::ErrorKind;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -28,8 +29,9 @@ impl<T> Receiving<T> {
 pub struct HttpClient<Channel, Buf = Bytes, T = ()> {
     pub(crate) conn: Conn<Channel, Buf, ClientTransaction>,
     queue: std::collections::VecDeque<Receiving<T>>,
+    client_id: usize,
 }
-
+static CLIENT_ID: AtomicUsize = AtomicUsize::new(0);
 impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf, T: Clone>
     HttpClient<Channel, Buf, T>
 {
@@ -37,9 +39,41 @@ impl<Channel: AsyncRead + AsyncWrite + Unpin, Buf: self::Buf, T: Clone>
         Self {
             conn: hyper::proto::Conn::new(io),
             queue: Default::default(),
+            client_id: CLIENT_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
-
+    pub fn get_client_id(&self) -> usize {
+        self.client_id
+    }
+    pub fn request_with_handle(
+        &mut self,
+        mut req: Request<Buf>,
+        handle: RequestHandle<T>,
+    ) -> Result<(), Request<Buf>> {
+        if self.conn.can_write_head() {
+            let aur = req
+                .uri()
+                .authority()
+                .expect("No valid authority")
+                .to_string();
+            req.headers_mut().insert(
+                HOST,
+                HeaderValue::from_str(&aur).expect("Host name invalid"),
+            );
+            let (parts, body) = req.into_parts();
+            let head = RequestHead {
+                version: parts.version,
+                subject: RequestLine(parts.method, parts.uri),
+                headers: parts.headers,
+                extensions: parts.extensions,
+            };
+            self.conn.write_full_msg(head, body);
+            self.queue.push_back(Receiving::new(handle));
+            Ok(())
+        } else {
+            Err(req)
+        }
+    }
     pub fn request(
         &mut self,
         mut req: Request<Buf>,

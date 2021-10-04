@@ -7,6 +7,8 @@ use speedy_http::{HttpClientPool, HttpClientPoolConfig};
 use std::io::Write;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
+use std::task::Poll;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 use tracing::level_filters::LevelFilter;
@@ -41,16 +43,21 @@ async fn connect_to_server(
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::setup_logs(LevelFilter::DEBUG)?;
-    let begin = std::time::Instant::now();
     let builder = || connect_to_server();
     let mut client = HttpClientPool::new(
         builder,
         HttpClientPoolConfig {
-            maintain_size: Some(10),
+            maintain_size: Some(100),
             max_conv_per_channel: 10,
         },
     );
-    let connection_num = 1000;
+    let connection_num = 100;
+    client.poll_maintain_connection();
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        futures::future::poll_fn(|cx| Poll::Ready(client.poll_connecting(cx))).await;
+    }
+    let begin = std::time::Instant::now();
     for _ in 0..connection_num {
         let req =
             Request::get(Uri::from_static("https://api.kucoin.com/timestamp")).body(Bytes::new())?;
@@ -65,22 +72,38 @@ async fn main() -> anyhow::Result<()> {
         .await;
         sum_time += handle.into_data().elapsed().as_micros();
     }
+    let elapsed = begin.elapsed();
     info!(
-        "Finished {} connections in {:?}. Average RTT {} ms",
+        "Finished {} requests in {:?}({} ms/req). Average RTT(req) {} ms.",
         connection_num,
-        begin.elapsed(),
-        sum_time as f64 / connection_num as f64 / 1000.0
+        elapsed,
+        elapsed.as_micros() as f64 / connection_num as f64 / 1000.0,
+        sum_time as f64 / connection_num as f64 / 1000.0,
     );
-    info!("Writing {} records", client.get_status_records().len());
+    info!(
+        "Writing {} records",
+        client.get_status_records().history_stats.len()
+    );
     let mut csv = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open("result.csv")?;
     ConnectionStatisticsEntry::write_csv_headers(&mut csv)?;
-    for status in client.get_status_records() {
+    for status in &client.get_status_records().history_stats {
         status.write_csv_line(&mut csv)?;
     }
     csv.flush()?;
+    let mut on_channels = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open("request_on_channels.csv")?;
+    writeln!(on_channels, "channel")?;
+    for line in &client.get_status_records().request_on_channel {
+        writeln!(on_channels, "{}", line)?;
+    }
+    on_channels.flush()?;
+
     Ok(())
 }

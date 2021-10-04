@@ -19,8 +19,9 @@ pub struct ConnectionStatisticsEntry {
 
 impl ConnectionStatisticsEntry {
     pub fn write_csv_headers(mut write: impl Write) -> std::io::Result<()> {
-        write.write_fmt(format_args!(
-            "{}, {}, {}, {}, {}, {}, {}, {}, {}\n",
+        writeln!(
+            write,
+            "{}, {}, {}, {}, {}, {}, {}, {}, {}",
             "time",
             "connection_new_count",
             "connection_living_count",
@@ -30,12 +31,13 @@ impl ConnectionStatisticsEntry {
             "request_sent_count",
             "response_ok_count",
             "response_bad_count",
-        ))?;
+        )?;
         Ok(())
     }
     pub fn write_csv_line(&self, mut write: impl Write) -> std::io::Result<()> {
-        write.write_fmt(format_args!(
-            "{}, {}, {}, {}, {}, {}, {}, {}, {}\n",
+        writeln!(
+            write,
+            "{}, {}, {}, {}, {}, {}, {}, {}, {}",
             self.time
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -48,7 +50,7 @@ impl ConnectionStatisticsEntry {
             self.stat.request_sent_count,
             self.stat.response_ok_count,
             self.stat.response_bad_count,
-        ))?;
+        )?;
         Ok(())
     }
 }
