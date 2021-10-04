@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let connection_num = 100;
     client.poll_maintain_connection();
-    for _ in 0..100 {
+    for _ in 0..500 {
         tokio::time::sleep(Duration::from_millis(1)).await;
         futures::future::poll_fn(|cx| Poll::Ready(client.poll_connecting(cx))).await;
     }

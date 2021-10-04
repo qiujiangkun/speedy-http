@@ -175,7 +175,7 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
         &mut self,
         cx: &mut Context,
     ) -> Poll<(RequestHandle<T>, Response<bytes::Bytes>)> {
-        for _ in 0..10 {
+        for _ in 0..3 {
             if let Some((handle, request)) = self.pending_requests.pop_front() {
                 if let Some(client) = self.client_section.get_client_mut() {
                     Self::try_make_request(
