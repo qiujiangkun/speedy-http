@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         let req =
             Request::get(Uri::from_static("https://api.kucoin.com/timestamp")).body(Bytes::new())?;
         client.request(req, std::time::Instant::now());
+        client.poll_send_request();
     }
     let mut sum_time = 0;
     for _ in 0..connection_num {

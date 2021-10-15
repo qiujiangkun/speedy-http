@@ -171,11 +171,8 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
         self.record_status();
         handle
     }
-    pub fn poll_response(
-        &mut self,
-        cx: &mut Context,
-    ) -> Poll<(RequestHandle<T>, Response<bytes::Bytes>)> {
-        for _ in 0..3 {
+    pub fn poll_send_request(&mut self) {
+        for _ in 0..10 {
             if let Some((handle, request)) = self.pending_requests.pop_front() {
                 if let Some(client) = self.client_section.get_client_mut() {
                     Self::try_make_request(
@@ -191,6 +188,12 @@ impl<Channel: AsyncRead + AsyncWrite + Send + Unpin + 'static, Buf: bytes::Buf, 
                 }
             }
         }
+    }
+    pub fn poll_response(
+        &mut self,
+        cx: &mut Context,
+    ) -> Poll<(RequestHandle<T>, Response<bytes::Bytes>)> {
+        self.poll_send_request();
         let mut resp = Poll::Pending;
         let mut i = 0;
         while i < self.client_section.clients.len() {

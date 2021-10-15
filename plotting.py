@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import time
 
 import matplotlib.pyplot as plt
@@ -12,4 +14,4 @@ if __name__ == '__main__':
         if col != "time":
             plt.plot(df["time"], df[col], label=col)
     plt.legend()
-    plt.show()
+    plt.savefig("result.png")
