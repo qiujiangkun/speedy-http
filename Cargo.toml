@@ -13,10 +13,11 @@ futures = "*"
 bytes = "*"
 tracing = "*"
 
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 tracing-log = { version = "*" }
-tracing-subscriber = { version = "*" }
+tracing-subscriber = { version = "*", features = ["env-filter"] }
 anyhow = "*"
 tokio-rustls = { version = "0.22" }
 webpki-roots = "0.21"
